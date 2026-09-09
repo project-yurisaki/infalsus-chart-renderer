@@ -1,8 +1,8 @@
 class Config:
     font_path = ''
-    pixels_per_sec = 450
-    track_width = 600
-    page_target_height = 4800
+    pixels_per_sec = int(450 * 0.8)
+    track_width = int(600 * 0.8)
+    page_target_height = int(4800 * 0.8)
     page_time_column_width = 112
     page_gap = 32
     page_padding = 24

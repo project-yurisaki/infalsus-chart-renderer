@@ -3,6 +3,7 @@ from typing import TypeVar, Type
 
 from .elements import *
 from .config import Config
+from .notes import analyze_notes
 from skia import (
     BlurStyle,
     BlendMode,
@@ -458,7 +459,11 @@ def _render_pages(
         for start, end in zip(boundary_offsets, boundary_offsets[1:])
     ]
     page_height = max(config.page_target_height, max(slice_heights))
-    page_width = config.page_time_column_width + config.track_width
+    page_width = (
+        config.page_time_column_width
+        + config.track_width
+        + config.page_rhythm_column_width
+    )
     total_width = (
         config.page_padding * 2
         + page_count * page_width
@@ -473,7 +478,10 @@ def _render_pages(
     typeface = FontMgr.RefDefault().matchFamilyStyle("Arial", FontStyle())
     font = Font(typeface, config.page_time_font_size)
     time_paint = Paint(Color=config.page_time_color, AntiAlias=True)
+    rhythm_font = Font(typeface, config.page_rhythm_font_size)
+    rhythm_paint = Paint(Color=config.page_rhythm_color, AntiAlias=True)
     beat_lines = ctx.get_beat_line_timestamps()
+    analyzed_notes = analyze_notes(ctx.chart)
 
     for page_index in range(page_count):
         start_timestamp = boundaries[page_index]
@@ -508,6 +516,31 @@ def _render_pages(
                 y + config.page_time_font_size * 0.35,
                 font,
                 time_paint,
+            )
+
+        rhythm_x = (
+            track_left
+            + config.track_width
+            + config.page_rhythm_label_gap
+        )
+        for note in analyzed_notes:
+            if not note.display:
+                continue
+            if page_index == 0:
+                is_on_page = start_timestamp <= note.time_point <= end_timestamp
+            else:
+                is_on_page = start_timestamp < note.time_point <= end_timestamp
+            if not is_on_page:
+                continue
+            y = page_bottom - (
+                ctx.z_offset_for_time(note.time_point) - start_z
+            )
+            canvas.drawString(
+                note.display,
+                rhythm_x,
+                y + config.page_rhythm_font_size * 0.35,
+                rhythm_font,
+                rhythm_paint,
             )
 
     return surface.makeImageSnapshot()

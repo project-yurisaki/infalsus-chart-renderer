@@ -9,6 +9,10 @@ class Config:
     page_time_font_size = 32
     page_time_label_gap = 12
     page_time_color = 0xFFB9C4D2
+    page_rhythm_column_width = 80
+    page_rhythm_font_size = 32
+    page_rhythm_label_gap = 12
+    page_rhythm_color = 0xFFB9C4D2
     page_background_color = 0xFF0B1018
     footer_height = 360
     tap_image_path = './tap.png'

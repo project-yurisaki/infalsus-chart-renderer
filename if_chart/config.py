@@ -1,12 +1,17 @@
 class Config:
     font_path = ''
-    pixels_per_sec = 400
+    pixels_per_sec = 450
     track_width = 600
     tap_image_path = './tap.png'
     hold_image_path = './hold.png'
     tap_left_color = 0xFF8B66F0
     tap_right_color = 0xFFE05C88
     hold_color = 0xFF3C92C7
+    directional_flick_right_color = 0xB05AE0A1
+    directional_flick_left_color = 0xB0F6D84A
+    directional_flick_height = 64
+    directional_flick_glow_blur = 4
+    directional_flick_edge_width = 2
     # ARGB: the low alpha keeps lane colors and notes visible through the field.
     skyarea_fill_color = 0x50927AE7
     skyarea_edge_glow_color = 0x668A70FF

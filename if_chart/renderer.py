@@ -301,6 +301,93 @@ def _tap_tint_color(ctx: RenderContext, tap: Tap) -> int | None:
     return None
 
 
+def _directional_flick_path(
+    ctx: RenderContext, flick: DirectionalFlick, surface_height: int
+) -> tuple[Path, Path]:
+    """Return the filled body and highlighted leading edge of a flick."""
+    width = flick.width * ctx.config.track_width
+    left = (flick.x - flick.width / 2) * ctx.config.track_width
+    right = left + width
+    base_y = surface_height - ctx.z_offset_for_time(flick.timestamp)
+    height = ctx.config.directional_flick_height
+
+    # Direction 4 points right and direction 16 points left. Build the right
+    # shape first, then mirror its x coordinates for the left variant.
+    def x(value: float) -> float:
+        position = left + value * width
+        return left + right - position if flick.direction == 0x10 else position
+
+    tip_x = x(0.72)
+    tip_y = base_y - height
+    body = Path()
+    body.moveTo(x(0.0), base_y)
+    body.cubicTo(
+        x(0.22), base_y - height * 0.08,
+        x(0.58), base_y - height * 0.58,
+        tip_x, tip_y,
+    )
+    body.cubicTo(
+        x(0.80), base_y - height * 0.62,
+        x(0.93), base_y - height * 0.16,
+        x(1.0), base_y,
+    )
+    body.close()
+
+    leading_edge = Path()
+    leading_edge.moveTo(tip_x, tip_y)
+    leading_edge.cubicTo(
+        x(0.80), base_y - height * 0.62,
+        x(0.93), base_y - height * 0.16,
+        x(1.0), base_y,
+    )
+    return body, leading_edge
+
+
+def _directional_flick_color(ctx: RenderContext, flick: DirectionalFlick) -> int:
+    if flick.direction == 0x10:
+        return ctx.config.directional_flick_left_color
+    return ctx.config.directional_flick_right_color
+
+
+def render_directional_flicks(ctx: RenderContext, canvas: Canvas):
+    flicks = ctx.get_objects_of_type(DirectionalFlick)
+    if not flicks:
+        return
+
+    surface_height = canvas.getSurface().height()
+    paints = {}
+    for flick in flicks:
+        color = _directional_flick_color(ctx, flick)
+        if color not in paints:
+            opaque_color = 0xFF000000 | (color & 0x00FFFFFF)
+            fill_paint = Paint(Color=color, AntiAlias=True)
+            glow_paint = Paint(
+                Color=color,
+                AntiAlias=True,
+                Style=Paint.kStroke_Style,
+                StrokeWidth=ctx.config.directional_flick_edge_width * 2,
+            )
+            glow_paint.setMaskFilter(
+                MaskFilter.MakeBlur(
+                    BlurStyle.kNormal_BlurStyle,
+                    ctx.config.directional_flick_glow_blur,
+                )
+            )
+            edge_paint = Paint(
+                Color=opaque_color,
+                AntiAlias=True,
+                Style=Paint.kStroke_Style,
+                StrokeWidth=ctx.config.directional_flick_edge_width,
+            )
+            paints[color] = (fill_paint, glow_paint, edge_paint)
+
+        fill_paint, glow_paint, edge_paint = paints[color]
+        body, leading_edge = _directional_flick_path(ctx, flick, surface_height)
+        canvas.drawPath(body, fill_paint)
+        canvas.drawPath(leading_edge, glow_paint)
+        canvas.drawPath(leading_edge, edge_paint)
+
+
 def render(
     chart: Chart, jacket_path: str, title: str, artist: str
 ) -> Image:
@@ -313,4 +400,5 @@ def render(
     render_holds(ctx, canvas)
     render_taps(ctx, canvas)
     render_skyareas(ctx, canvas)
+    render_directional_flicks(ctx, canvas)
     return surface.makeImageSnapshot()

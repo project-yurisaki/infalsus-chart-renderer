@@ -76,7 +76,7 @@ def _directional_flick(
     _: ParserContext, timestamp: int,
     x: int, split: int, width: int, direction: int
 ) -> DirectionalFlick | None:
-    if direction not in [0x1, 0x2, 0x4, 0x8]:
+    if direction not in [0x4, 0x10]:
         return None
     return DirectionalFlick(timestamp, x / split, width / split, direction)
 

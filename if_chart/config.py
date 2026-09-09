@@ -2,6 +2,15 @@ class Config:
     font_path = ''
     pixels_per_sec = 450
     track_width = 600
+    page_target_height = 4800
+    page_time_column_width = 112
+    page_gap = 32
+    page_padding = 24
+    page_time_font_size = 32
+    page_time_label_gap = 12
+    page_time_color = 0xFFB9C4D2
+    page_background_color = 0xFF0B1018
+    footer_height = 360
     tap_image_path = './tap.png'
     hold_image_path = './hold.png'
     tap_left_color = 0xFF8B66F0

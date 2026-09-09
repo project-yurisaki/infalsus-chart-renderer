@@ -8,6 +8,9 @@ from skia import (
     BlendMode,
     Canvas,
     ColorFilters,
+    Font,
+    FontMgr,
+    FontStyle,
     Image,
     MaskFilter,
     Paint,
@@ -388,11 +391,50 @@ def render_directional_flicks(ctx: RenderContext, canvas: Canvas):
         canvas.drawPath(leading_edge, edge_paint)
 
 
-def render(
-    chart: Chart, jacket_path: str, title: str, artist: str
-) -> Image:
-    ctx = RenderContext(chart)
-    track_height = int(ctx.z_offset_for_time(ctx.get_max_object_time() + 500))
+def _format_chart_time(timestamp: int) -> str:
+    total_tenths = int(timestamp / 100 + 0.5)
+    minutes, remainder = divmod(total_tenths, 600)
+    seconds, tenths = divmod(remainder, 10)
+    return f"{minutes}:{seconds:02d}.{tenths}"
+
+
+def _page_boundaries(ctx: RenderContext, end_timestamp: int) -> list[int]:
+    """Split near the target height, using beat lines as measure-safe cuts."""
+    target_height = ctx.config.page_target_height
+    end_z = ctx.z_offset_for_time(end_timestamp)
+    beat_lines = [
+        (timestamp, ctx.z_offset_for_time(timestamp))
+        for timestamp in ctx.get_beat_line_timestamps()
+        if 0 < timestamp < end_timestamp
+    ]
+    boundaries = [0]
+    current_timestamp = 0
+    current_z = 0.0
+
+    while end_z - current_z > target_height:
+        eligible = [
+            item
+            for item in beat_lines
+            if item[0] > current_timestamp and item[1] - current_z <= target_height
+        ]
+        if eligible:
+            next_timestamp, next_z = eligible[-1]
+        else:
+            remaining = [item for item in beat_lines if item[0] > current_timestamp]
+            if not remaining:
+                break
+            next_timestamp, next_z = remaining[0]
+
+        boundaries.append(next_timestamp)
+        current_timestamp = next_timestamp
+        current_z = next_z
+
+    boundaries.append(end_timestamp)
+    return boundaries
+
+
+def _render_track(ctx: RenderContext, end_timestamp: int) -> Image:
+    track_height = int(ctx.z_offset_for_time(end_timestamp))
     surface = Surface(ctx.config.track_width, track_height)
     canvas = surface.getCanvas()
     render_lanes(ctx, canvas)
@@ -402,3 +444,82 @@ def render(
     render_skyareas(ctx, canvas)
     render_directional_flicks(ctx, canvas)
     return surface.makeImageSnapshot()
+
+
+def _render_pages(
+    ctx: RenderContext, track_image: Image, boundaries: list[int]
+) -> Image:
+    config = ctx.config
+    page_count = len(boundaries) - 1
+    boundary_offsets = [
+        int(round(ctx.z_offset_for_time(timestamp)))
+        for timestamp in boundaries[:-1]
+    ] + [track_image.height()]
+    slice_heights = [
+        end - start
+        for start, end in zip(boundary_offsets, boundary_offsets[1:])
+    ]
+    page_height = max(config.page_target_height, max(slice_heights))
+    page_width = config.page_time_column_width + config.track_width
+    total_width = (
+        config.page_padding * 2
+        + page_count * page_width
+        + (page_count - 1) * config.page_gap
+    )
+    total_height = config.page_padding * 2 + page_height + config.footer_height
+
+    surface = Surface(total_width, total_height)
+    canvas = surface.getCanvas()
+    canvas.clear(config.page_background_color)
+
+    typeface = FontMgr.RefDefault().matchFamilyStyle("Arial", FontStyle())
+    font = Font(typeface, config.page_time_font_size)
+    time_paint = Paint(Color=config.page_time_color, AntiAlias=True)
+    beat_lines = ctx.get_beat_line_timestamps()
+
+    for page_index in range(page_count):
+        start_timestamp = boundaries[page_index]
+        end_timestamp = boundaries[page_index + 1]
+        start_offset = boundary_offsets[page_index]
+        end_offset = boundary_offsets[page_index + 1]
+        slice_height = slice_heights[page_index]
+        page_left = config.page_padding + page_index * (page_width + config.page_gap)
+        track_left = page_left + config.page_time_column_width
+        page_bottom = config.page_padding + page_height
+        page_top = page_bottom - slice_height
+
+        source_top = track_image.height() - end_offset
+        source_bottom = track_image.height() - start_offset
+        canvas.drawImageRect(
+            track_image,
+            Rect(0, source_top, config.track_width, source_bottom),
+            Rect(track_left, page_top, track_left + config.track_width, page_bottom),
+        )
+
+        start_z = ctx.z_offset_for_time(start_timestamp)
+        for timestamp in beat_lines:
+            if not (start_timestamp < timestamp <= end_timestamp):
+                continue
+            y = page_bottom - (ctx.z_offset_for_time(timestamp) - start_z)
+            label = _format_chart_time(timestamp)
+            label_width = font.measureText(label, paint=time_paint)
+            x = track_left - config.page_time_label_gap - label_width
+            canvas.drawString(
+                label,
+                x,
+                y + config.page_time_font_size * 0.35,
+                font,
+                time_paint,
+            )
+
+    return surface.makeImageSnapshot()
+
+
+def render(
+    chart: Chart, jacket_path: str, title: str, artist: str
+) -> Image:
+    ctx = RenderContext(chart)
+    end_timestamp = ctx.get_max_object_time() + 500
+    track_image = _render_track(ctx, end_timestamp)
+    boundaries = _page_boundaries(ctx, end_timestamp)
+    return _render_pages(ctx, track_image, boundaries)

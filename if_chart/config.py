@@ -9,6 +9,9 @@ class Config:
     page_time_font_size = 32
     page_time_label_gap = 12
     page_time_color = 0xFFB9C4D2
+    page_combo_font_size = 26
+    page_combo_gap = 6
+    page_combo_color = 0xFF8E9AAA
     page_rhythm_column_width = 80
     page_rhythm_font_size = 32
     page_rhythm_label_gap = 12

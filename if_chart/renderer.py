@@ -3,6 +3,7 @@ from typing import TypeVar, Type
 
 from .elements import *
 from .config import Config
+from .note_judgement import get_chart_judgement_points, get_combo_before
 from .notes import analyze_notes
 from skia import (
     BlurStyle,
@@ -91,12 +92,33 @@ def render_lanes(ctx: RenderContext, canvas: Canvas):
         canvas.drawRect(Rect(w * i - 2, 0, w * i + 2, h), Paint(Color=divider_colors[i]))
 
 
-def render_beat_lines(ctx: RenderContext, canvas: Canvas):
-    timestamps = ctx.get_beat_line_timestamps()
+def _beat_line_timestamps_with_bounds(
+    ctx: RenderContext, end_timestamp: int
+) -> list[int]:
+    return sorted({
+        0,
+        end_timestamp,
+        *(
+            timestamp
+            for timestamp in ctx.get_beat_line_timestamps()
+            if 0 < timestamp < end_timestamp
+        ),
+    })
+
+
+def render_beat_lines(
+    ctx: RenderContext, canvas: Canvas, end_timestamp: int
+):
+    timestamps = _beat_line_timestamps_with_bounds(ctx, end_timestamp)
     w = canvas.getSurface().width()
+    h = canvas.getSurface().height()
     for timestamp in timestamps:
-        y = canvas.getSurface().height() - ctx.z_offset_for_time(timestamp)
-        canvas.drawRect(Rect(0, y - 1, w, y), Paint(Color=0xFFFFFFFF))
+        y = h - ctx.z_offset_for_time(timestamp)
+        line_top = min(max(y - 1, 0), h - 1)
+        canvas.drawRect(
+            Rect(0, line_top, w, line_top + 1),
+            Paint(Color=0xFFFFFFFF),
+        )
 
 
 def _ease(progress: float, easing: int) -> float:
@@ -474,7 +496,7 @@ def _render_track(ctx: RenderContext, end_timestamp: int) -> Image:
     surface = Surface(ctx.config.track_width, track_height)
     canvas = surface.getCanvas()
     render_lanes(ctx, canvas)
-    render_beat_lines(ctx, canvas)
+    render_beat_lines(ctx, canvas, end_timestamp)
     render_holds(ctx, canvas)
     render_taps(ctx, canvas)
     render_skyareas(ctx, canvas)
@@ -515,9 +537,12 @@ def _render_pages(
     typeface = FontMgr.RefDefault().matchFamilyStyle("Arial", FontStyle())
     font = Font(typeface, config.page_time_font_size)
     time_paint = Paint(Color=config.page_time_color, AntiAlias=True)
+    combo_font = Font(typeface, config.page_combo_font_size)
+    combo_paint = Paint(Color=config.page_combo_color, AntiAlias=True)
     rhythm_font = Font(typeface, config.page_rhythm_font_size)
     rhythm_paint = Paint(Color=config.page_rhythm_color, AntiAlias=True)
-    beat_lines = ctx.get_beat_line_timestamps()
+    beat_lines = _beat_line_timestamps_with_bounds(ctx, boundaries[-1])
+    judgement_points = get_chart_judgement_points(ctx.chart)
     analyzed_notes = analyze_notes(ctx.chart)
 
     for page_index in range(page_count):
@@ -541,18 +566,33 @@ def _render_pages(
 
         start_z = ctx.z_offset_for_time(start_timestamp)
         for timestamp in beat_lines:
-            if not (start_timestamp < timestamp <= end_timestamp):
+            if page_index == 0:
+                is_on_page = start_timestamp <= timestamp <= end_timestamp
+            else:
+                is_on_page = start_timestamp < timestamp <= end_timestamp
+            if not is_on_page:
                 continue
             y = page_bottom - (ctx.z_offset_for_time(timestamp) - start_z)
             label = _format_chart_time(timestamp)
             label_width = font.measureText(label, paint=time_paint)
             x = track_left - config.page_time_label_gap - label_width
+            time_baseline = y + config.page_time_font_size * 0.35
             canvas.drawString(
                 label,
                 x,
-                y + config.page_time_font_size * 0.35,
+                time_baseline,
                 font,
                 time_paint,
+            )
+            combo_label = str(get_combo_before(judgement_points, timestamp))
+            combo_width = combo_font.measureText(combo_label, paint=combo_paint)
+            combo_x = track_left - config.page_time_label_gap - combo_width
+            canvas.drawString(
+                combo_label,
+                combo_x,
+                time_baseline + config.page_combo_font_size + config.page_combo_gap,
+                combo_font,
+                combo_paint,
             )
 
         rhythm_x = (

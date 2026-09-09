@@ -277,9 +277,7 @@ def render_taps(ctx: RenderContext, canvas: Canvas):
         bottom = canvas.getSurface().height() - ctx.z_offset_for_time(tap.timestamp)
         top = bottom - tap_image.height()
         tint_color = _tap_tint_color(ctx, tap)
-        paint = None
-        if tint_color is not None:
-            paint = _get_tint_paint(tint_paints, tint_color)
+        paint = _get_tint_paint(tint_paints, tint_color)
         canvas.drawImage(tap_image, left, top, paint=paint)
 
 
@@ -295,13 +293,13 @@ def _tap_layout(
     return left, width, height
 
 
-def _tap_tint_color(ctx: RenderContext, tap: Tap) -> int | None:
+def _tap_tint_color(ctx: RenderContext, tap: Tap) -> int:
     """Return the side-lane tint for a tap, with the left side taking priority."""
     if tap.lane <= 0:
         return ctx.config.tap_left_color
     if tap.lane + tap.width >= 6:
         return ctx.config.tap_right_color
-    return None
+    return ctx.config.tap_color
 
 
 def _directional_flick_path(

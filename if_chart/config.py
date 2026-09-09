@@ -16,6 +16,7 @@ class Config:
     tap_left_color = 0xFF8B66F0
     tap_right_color = 0xFFE05C88
     hold_color = 0xFF3C92C7
+    tap_color = hold_color
     directional_flick_right_color = 0xB05AE0A1
     directional_flick_left_color = 0xB0F6D84A
     directional_flick_height = 64

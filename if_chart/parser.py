@@ -1,4 +1,4 @@
-from elements import *
+from .elements import *
 from typing import Optional, get_type_hints
 import inspect
 
@@ -97,13 +97,13 @@ def _sky_area(
     end_width_f = end_width / end_x_split
     end_left = end_x_f - end_width_f / 2
     end_right = end_x_f + end_width_f / 2
-    if start_left < 1e-7 or start_right > (1 + 1e-7) or end_left < 1e-7 or end_right > (1 + 1e-7):
+    if start_left < -1e-7 or start_right > (1 + 1e-7) or end_left < -1e-7 or end_right > (1 + 1e-7):
         return None
     easing_types = [0, 1, 2]
     if easing_left not in easing_types or easing_right not in easing_types:
         return None
     if group_id is None:
-        if context.last_skyarea is not None and abs(timestamp - context.last_skyarea.timestamp + context.last_skyarea.duration) <= 2:
+        if context.last_skyarea is not None and abs(timestamp - context.last_skyarea.get_end_timestamp()) <= 2:
             group_id = context.last_skyarea.group_id
         else:
             group_id = context.next_group_id()

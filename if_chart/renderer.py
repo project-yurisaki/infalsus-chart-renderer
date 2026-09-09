@@ -1,8 +1,20 @@
+from math import cos, pi, sin
 from typing import TypeVar, Type
-from parser import parse_chart
-from elements import *
-from config import Config
-from skia import Surface, Canvas, Paint, Path, Image, EncodedImageFormat, Rect
+
+from .elements import *
+from .config import Config
+from skia import (
+    BlurStyle,
+    BlendMode,
+    Canvas,
+    ColorFilters,
+    Image,
+    MaskFilter,
+    Paint,
+    Path,
+    Rect,
+    Surface,
+)
 
 
 class RenderContext:
@@ -44,24 +56,24 @@ class RenderContext:
         return max(x.get_end_timestamp() for x in self.raw_events)
 
     def get_beat_line_timestamps(self) -> list[int]:
-        res = []
+        res: list[float] = []
         max_timestamp = self.get_max_object_time()
-        last_timestamp = 0
+        last_timestamp = 0.0
         bpm, bpl = self.chart.bpm, self.chart.bpl
         for item in self.bpm_changes:
             interval = 1000 * bpl * 60 / bpm
             while last_timestamp + interval <= item.timestamp:
-                last_timestamp = int(last_timestamp + interval)
+                last_timestamp = last_timestamp + interval
                 res.append(last_timestamp)
-            if last_timestamp != item.timestamp:
+            if abs(last_timestamp - item.timestamp) >= 1:
                 res.append(item.timestamp)
             last_timestamp = item.timestamp
             bpm, bpl = item.bpm, item.bpl
         interval = 1000 * bpl * 60 / bpm
         while last_timestamp + interval <= max_timestamp:
-            last_timestamp = int(last_timestamp + interval)
+            last_timestamp = last_timestamp + interval
             res.append(last_timestamp)
-        return res
+        return list(map(int, res))
 
 
 def render_lanes(ctx: RenderContext, canvas: Canvas):
@@ -83,16 +95,210 @@ def render_beat_lines(ctx: RenderContext, canvas: Canvas):
         canvas.drawRect(Rect(0, y - 1, w, y), Paint(Color=0xFFFFFFFF))
 
 
+def _ease(progress: float, easing: int) -> float:
+    """Apply skyarea easing: 0 straight, 1 sine-out, 2 sine-in."""
+    if easing == 1:
+        return sin(progress * pi / 2)
+    if easing == 2:
+        return 1.0 - cos(progress * pi / 2)
+    return progress
+
+
+def _skyarea_points(
+    ctx: RenderContext, skyarea: SkyArea, surface_height: int
+) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    """Return sampled left and right boundaries, ordered start to end."""
+    start_left = skyarea.start_x - skyarea.start_width / 2
+    start_right = skyarea.start_x + skyarea.start_width / 2
+    end_left = skyarea.end_x - skyarea.end_width / 2
+    end_right = skyarea.end_x + skyarea.end_width / 2
+
+    height = abs(
+        ctx.z_offset_for_time(skyarea.timestamp + skyarea.duration)
+        - ctx.z_offset_for_time(skyarea.timestamp)
+    )
+    # Curves are sampled often enough to stay smooth without making long,
+    # straight skyareas unnecessarily expensive.
+    sample_count = max(1, int(height / 8))
+    left_points = []
+    right_points = []
+    for index in range(sample_count + 1):
+        progress = index / sample_count
+        timestamp = skyarea.timestamp + skyarea.duration * progress
+        y = surface_height - ctx.z_offset_for_time(timestamp)
+        left_x = (start_left + (end_left - start_left) * _ease(progress, skyarea.easing_left)) * ctx.config.track_width
+        right_x = (start_right + (end_right - start_right) * _ease(progress, skyarea.easing_right)) * ctx.config.track_width
+        left_points.append((left_x, y))
+        right_points.append((right_x, y))
+    return left_points, right_points
+
+
+def _path_from_points(points: list[tuple[float, float]]) -> Path:
+    path = Path()
+    path.moveTo(*points[0])
+    for point in points[1:]:
+        path.lineTo(*point)
+    return path
+
+
+def render_skyareas(ctx: RenderContext, canvas: Canvas):
+    skyareas = ctx.get_objects_of_type(SkyArea)
+    if not skyareas:
+        return
+
+    surface_height = canvas.getSurface().height()
+    by_group = {}
+    for skyarea in skyareas:
+        by_group.setdefault(skyarea.group_id, []).append(skyarea)
+
+    fill_paint = Paint(Color=ctx.config.skyarea_fill_color, AntiAlias=True)
+    fill_paint.setBlendMode(BlendMode.kSrcOver)
+    glow_paint = Paint(
+        Color=ctx.config.skyarea_edge_glow_color,
+        AntiAlias=True,
+        Style=Paint.kStroke_Style,
+        StrokeWidth=ctx.config.skyarea_edge_glow_width,
+    )
+    glow_paint.setMaskFilter(
+        MaskFilter.MakeBlur(
+            BlurStyle.kNormal_BlurStyle,
+            ctx.config.skyarea_edge_glow_blur,
+        )
+    )
+    edge_paint = Paint(
+        Color=ctx.config.skyarea_edge_color,
+        AntiAlias=True,
+        Style=Paint.kStroke_Style,
+        StrokeWidth=ctx.config.skyarea_edge_width,
+    )
+
+    for group in by_group.values():
+        group.sort()
+        for index, skyarea in enumerate(group):
+            left_points, right_points = _skyarea_points(ctx, skyarea, surface_height)
+            has_previous = (
+                index > 0
+                and abs(skyarea.timestamp - group[index - 1].get_end_timestamp()) <= 2
+            )
+            has_next = (
+                index < len(group) - 1
+                and abs(group[index + 1].timestamp - skyarea.get_end_timestamp()) <= 2
+            )
+
+            area_path = _path_from_points(left_points)
+            for point in reversed(right_points):
+                area_path.lineTo(*point)
+            area_path.close()
+            canvas.drawPath(area_path, fill_paint)
+
+            # Side edges are always visible. Horizontal caps are only drawn at
+            # the outer ends of a continuous group, avoiding seams between its
+            # component commands.
+            edge_paths = [
+                _path_from_points(left_points),
+                _path_from_points(right_points),
+            ]
+            if not has_previous:
+                edge_paths.append(_path_from_points([left_points[0], right_points[0]]))
+            if not has_next:
+                edge_paths.append(_path_from_points([left_points[-1], right_points[-1]]))
+
+            for edge_path in edge_paths:
+                canvas.drawPath(edge_path, glow_paint)
+                canvas.drawPath(edge_path, edge_paint)
+
+
+def _get_tint_paint(cache: dict[int, Paint], color: int) -> Paint:
+    paint = cache.get(color)
+    if paint is None:
+        paint = Paint(AntiAlias=True)
+        paint.setColorFilter(ColorFilters.Blend(color, BlendMode.kColor))
+        cache[color] = paint
+    return paint
+
+
+def render_holds(ctx: RenderContext, canvas: Canvas):
+    holds = ctx.get_objects_of_type(Hold)
+    if not holds:
+        return
+
+    source_image: Image = Image.open(ctx.config.hold_image_path)
+    resized_images = {}
+    tint_paints = {}
+    surface_height = canvas.getSurface().height()
+    for hold in holds:
+        left, top, width, height = _hold_layout(ctx, hold, surface_height)
+        size = (width, height)
+        hold_image = resized_images.get(size)
+        if hold_image is None:
+            hold_image = source_image.resize(width, height)
+            resized_images[size] = hold_image
+        paint = _get_tint_paint(tint_paints, _hold_tint_color(ctx, hold))
+        canvas.drawImage(hold_image, left, top, paint=paint)
+
+
+def _hold_layout(
+    ctx: RenderContext, hold: Hold, surface_height: int
+) -> tuple[float, float, int, int]:
+    """Return left, top, width and height for a ground hold."""
+    lane_width = ctx.config.track_width / 6
+    left = lane_width * hold.lane + 2
+    width = max(1, int(lane_width * hold.width - 4))
+    bottom = surface_height - ctx.z_offset_for_time(hold.timestamp)
+    top = surface_height - ctx.z_offset_for_time(hold.get_end_timestamp())
+    height = max(1, int(round(bottom - top)))
+    return left, top, width, height
+
+
+def _hold_tint_color(ctx: RenderContext, hold: Hold) -> int:
+    if hold.lane <= 0:
+        return ctx.config.tap_left_color
+    if hold.lane + hold.width >= 6:
+        return ctx.config.tap_right_color
+    return ctx.config.hold_color
+
+
 def render_taps(ctx: RenderContext, canvas: Canvas):
     taps = ctx.get_objects_of_type(Tap)
-    tap_image: Image = Image.open(ctx.config.tap_image_path)
-    ratio = (ctx.config.track_width // 6 - 4) / tap_image.width()
-    tap_image = tap_image.resize(int(tap_image.width() * ratio), int(tap_image.height() * ratio))
+    source_image: Image = Image.open(ctx.config.tap_image_path)
+    resized_images = {}
+    tint_paints = {}
     for tap in taps:
+        left, width, height = _tap_layout(
+            ctx, tap, source_image.width(), source_image.height()
+        )
+        tap_image = resized_images.get(tap.width)
+        if tap_image is None:
+            tap_image = source_image.resize(width, height)
+            resized_images[tap.width] = tap_image
         bottom = canvas.getSurface().height() - ctx.z_offset_for_time(tap.timestamp)
-        left = ctx.config.track_width / 6 * tap.lane + 2
         top = bottom - tap_image.height()
-        canvas.drawImage(tap_image, left, top)
+        tint_color = _tap_tint_color(ctx, tap)
+        paint = None
+        if tint_color is not None:
+            paint = _get_tint_paint(tint_paints, tint_color)
+        canvas.drawImage(tap_image, left, top, paint=paint)
+
+
+def _tap_layout(
+    ctx: RenderContext, tap: Tap, source_width: int, source_height: int
+) -> tuple[float, int, int]:
+    """Return left, width and height for a right-extending tap."""
+    lane_width = ctx.config.track_width / 6
+    single_lane_width = lane_width - 4
+    height = max(1, int(source_height * single_lane_width / source_width))
+    width = max(1, int(lane_width * tap.width - 4))
+    left = lane_width * tap.lane + 2
+    return left, width, height
+
+
+def _tap_tint_color(ctx: RenderContext, tap: Tap) -> int | None:
+    """Return the side-lane tint for a tap, with the left side taking priority."""
+    if tap.lane <= 0:
+        return ctx.config.tap_left_color
+    if tap.lane + tap.width >= 6:
+        return ctx.config.tap_right_color
+    return None
 
 
 def render(
@@ -104,10 +310,7 @@ def render(
     canvas = surface.getCanvas()
     render_lanes(ctx, canvas)
     render_beat_lines(ctx, canvas)
+    render_holds(ctx, canvas)
     render_taps(ctx, canvas)
+    render_skyareas(ctx, canvas)
     return surface.makeImageSnapshot()
-
-
-with open(r'D:\Dev\InFalsus\decrypted\ordirehv3.spc', 'r') as f:
-    with open(r'D:\test.png', 'wb') as img:
-        render(parse_chart(f.read()), '', '', '').save(img, EncodedImageFormat.kPNG)

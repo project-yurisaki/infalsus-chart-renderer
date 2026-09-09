@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from math import cos, pi, sin
+import os
 from typing import TypeVar, Type
 
 from .elements import *
@@ -20,6 +22,16 @@ from skia import (
     Rect,
     Surface,
 )
+
+
+@dataclass(frozen=True)
+class RenderMetadata:
+    jacket_path: str
+    title: str
+    artist: str
+    chart_designer: str = ""
+    jacket_designer: str = ""
+    level: str = ""
 
 
 class RenderContext:
@@ -456,6 +468,233 @@ def _format_chart_time(timestamp: int) -> str:
     return f"{minutes}:{seconds:02d}.{tenths}"
 
 
+def _format_bpm(chart: Chart) -> str:
+    bpm_values = {float(chart.bpm)}
+    bpm_values.update(
+        float(event.bpm)
+        for event in chart.events
+        if isinstance(event, BpmChange)
+    )
+    minimum = min(bpm_values)
+    maximum = max(bpm_values)
+    if minimum == maximum:
+        return f"{minimum:g}"
+    return f"{minimum:g}–{maximum:g}"
+
+
+def _footer_min_width(config: Config) -> int:
+    return (
+        config.footer_padding * 2
+        + config.footer_jacket_size
+        + config.footer_jacket_gap
+        + config.footer_identity_width
+        + config.footer_section_gap
+        + config.footer_count_width
+        + config.footer_section_gap
+        + config.footer_detail_width
+    )
+
+
+def _fit_text(text: str, font: Font, paint: Paint, max_width: float) -> str:
+    if font.measureText(text, paint=paint) <= max_width:
+        return text
+    ellipsis = "..."
+    low, high = 0, len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        candidate = text[:middle].rstrip() + ellipsis
+        if font.measureText(candidate, paint=paint) <= max_width:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low].rstrip() + ellipsis
+
+
+def _draw_footer_rows(
+    canvas: Canvas,
+    rows: list[tuple[str, str]],
+    x: float,
+    first_baseline: float,
+    width: float,
+    label_width: float,
+    label_font: Font,
+    value_font: Font,
+    label_paint: Paint,
+    value_paint: Paint,
+    row_height: float,
+) -> None:
+    for index, (label, value) in enumerate(rows):
+        baseline = first_baseline + index * row_height
+        canvas.drawString(label, x, baseline, label_font, label_paint)
+        value_x = x + label_width
+        fitted_value = _fit_text(
+            value or "—",
+            value_font,
+            value_paint,
+            width - label_width,
+        )
+        canvas.drawString(
+            fitted_value,
+            value_x,
+            baseline,
+            value_font,
+            value_paint,
+        )
+
+
+def _draw_footer(
+    ctx: RenderContext,
+    canvas: Canvas,
+    metadata: RenderMetadata,
+    footer_top: int,
+    total_width: int,
+) -> None:
+    config = ctx.config
+    footer_bottom = footer_top + config.footer_height
+    canvas.drawRect(
+        Rect(0, footer_top, total_width, footer_bottom),
+        Paint(Color=config.footer_background_color),
+    )
+    canvas.drawRect(
+        Rect(0, footer_top, total_width, footer_top + 2),
+        Paint(Color=config.footer_divider_color),
+    )
+
+    typeface = FontMgr.RefDefault().matchFamilyStyle("Arial", FontStyle())
+    title_font = Font(typeface, config.footer_title_font_size)
+    label_font = Font(typeface, config.footer_label_font_size)
+    value_font = Font(typeface, config.footer_value_font_size)
+    credit_font = Font(typeface, config.footer_credit_font_size)
+    title_paint = Paint(Color=config.footer_title_color, AntiAlias=True)
+    label_paint = Paint(Color=config.footer_label_color, AntiAlias=True)
+    value_paint = Paint(Color=config.footer_value_color, AntiAlias=True)
+    credit_paint = Paint(Color=config.footer_credit_color, AntiAlias=True)
+
+    content_top = footer_top + (config.footer_height - config.footer_jacket_size) / 2
+    jacket_left = config.footer_padding
+    jacket_rect = Rect(
+        jacket_left,
+        content_top,
+        jacket_left + config.footer_jacket_size,
+        content_top + config.footer_jacket_size,
+    )
+    if metadata.jacket_path and os.path.isfile(metadata.jacket_path):
+        jacket = Image.open(metadata.jacket_path)
+        crop_size = min(jacket.width(), jacket.height())
+        source_left = (jacket.width() - crop_size) / 2
+        source_top = (jacket.height() - crop_size) / 2
+        canvas.drawImageRect(
+            jacket,
+            Rect(
+                source_left,
+                source_top,
+                source_left + crop_size,
+                source_top + crop_size,
+            ),
+            jacket_rect,
+        )
+    else:
+        canvas.drawRect(
+            jacket_rect,
+            Paint(Color=config.footer_jacket_placeholder_color),
+        )
+        placeholder = "NO JACKET"
+        placeholder_width = label_font.measureText(placeholder, paint=label_paint)
+        canvas.drawString(
+            placeholder,
+            jacket_rect.centerX() - placeholder_width / 2,
+            jacket_rect.centerY() + config.footer_label_font_size * 0.35,
+            label_font,
+            label_paint,
+        )
+
+    identity_x = (
+        jacket_left + config.footer_jacket_size + config.footer_jacket_gap
+    )
+    title = _fit_text(
+        metadata.title or "Untitled",
+        title_font,
+        title_paint,
+        config.footer_identity_width,
+    )
+    title_baseline = content_top + config.footer_title_font_size
+    canvas.drawString(title, identity_x, title_baseline, title_font, title_paint)
+    _draw_footer_rows(
+        canvas,
+        [
+            ("Artist", metadata.artist),
+            ("Chart Designer", metadata.chart_designer),
+            ("Jacket Designer", metadata.jacket_designer),
+        ],
+        identity_x,
+        title_baseline + 55,
+        config.footer_identity_width,
+        230,
+        label_font,
+        value_font,
+        label_paint,
+        value_paint,
+        config.footer_row_height,
+    )
+
+    judgement_points = get_chart_judgement_points(ctx.chart)
+    count_x = (
+        identity_x
+        + config.footer_identity_width
+        + config.footer_section_gap
+    )
+    _draw_footer_rows(
+        canvas,
+        [
+            ("Combo", str(len(judgement_points))),
+            ("Tap", str(len(ctx.get_objects_of_type(Tap)))),
+            ("Hold", str(len(ctx.get_objects_of_type(Hold)))),
+            ("Flick", str(len(ctx.get_objects_of_type(DirectionalFlick)))),
+            ("SkyArea", str(len(ctx.get_objects_of_type(SkyArea)))),
+        ],
+        count_x,
+        content_top + config.footer_value_font_size,
+        config.footer_count_width,
+        150,
+        label_font,
+        value_font,
+        label_paint,
+        value_paint,
+        config.footer_row_height,
+    )
+
+    detail_x = (
+        count_x + config.footer_count_width + config.footer_section_gap
+    )
+    _draw_footer_rows(
+        canvas,
+        [
+            ("Duration", _format_chart_time(ctx.get_max_object_time())),
+            ("BPM", _format_bpm(ctx.chart)),
+            ("Level", metadata.level),
+        ],
+        detail_x,
+        content_top + config.footer_value_font_size,
+        config.footer_detail_width,
+        150,
+        label_font,
+        value_font,
+        label_paint,
+        value_paint,
+        config.footer_row_height,
+    )
+
+    credit = "Generated by YurisakiBot"
+    credit_width = credit_font.measureText(credit, paint=credit_paint)
+    canvas.drawString(
+        credit,
+        total_width - config.footer_padding - credit_width,
+        footer_bottom - config.footer_padding,
+        credit_font,
+        credit_paint,
+    )
+
+
 def _page_boundaries(ctx: RenderContext, end_timestamp: int) -> list[int]:
     """Split near the target height, using beat lines as measure-safe cuts."""
     target_height = ctx.config.page_target_height
@@ -505,7 +744,10 @@ def _render_track(ctx: RenderContext, end_timestamp: int) -> Image:
 
 
 def _render_pages(
-    ctx: RenderContext, track_image: Image, boundaries: list[int]
+    ctx: RenderContext,
+    track_image: Image,
+    boundaries: list[int],
+    metadata: RenderMetadata,
 ) -> Image:
     config = ctx.config
     page_count = len(boundaries) - 1
@@ -523,16 +765,20 @@ def _render_pages(
         + config.track_width
         + config.page_rhythm_column_width
     )
-    total_width = (
+    total_width = max(
         config.page_padding * 2
         + page_count * page_width
-        + (page_count - 1) * config.page_gap
+        + (page_count - 1) * config.page_gap,
+        _footer_min_width(config),
     )
-    total_height = config.page_padding * 2 + page_height + config.footer_height
+    page_bottom = config.page_padding + page_height
+    footer_top = page_bottom + config.footer_track_gap
+    total_height = footer_top + config.footer_height
 
     surface = Surface(total_width, total_height)
     canvas = surface.getCanvas()
     canvas.clear(config.page_background_color)
+    _draw_footer(ctx, canvas, metadata, footer_top, total_width)
 
     typeface = FontMgr.RefDefault().matchFamilyStyle("Arial", FontStyle())
     font = Font(typeface, config.page_time_font_size)
@@ -624,10 +870,24 @@ def _render_pages(
 
 
 def render(
-    chart: Chart, jacket_path: str, title: str, artist: str
+    chart: Chart,
+    jacket_path: str,
+    title: str,
+    artist: str,
+    chart_designer: str = "",
+    jacket_designer: str = "",
+    level: str = "",
 ) -> Image:
     ctx = RenderContext(chart)
     end_timestamp = ctx.get_max_object_time() + 500
     track_image = _render_track(ctx, end_timestamp)
     boundaries = _page_boundaries(ctx, end_timestamp)
-    return _render_pages(ctx, track_image, boundaries)
+    metadata = RenderMetadata(
+        jacket_path=jacket_path,
+        title=title,
+        artist=artist,
+        chart_designer=chart_designer,
+        jacket_designer=jacket_designer,
+        level=level,
+    )
+    return _render_pages(ctx, track_image, boundaries, metadata)

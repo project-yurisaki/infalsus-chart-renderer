@@ -24,6 +24,8 @@ class Config:
     directional_flick_right_color = 0xB05AE0A1
     directional_flick_left_color = 0xB0F6D84A
     directional_flick_height = 64
+    directional_flick_tip_inset = 45
+    directional_flick_tail_scale = 80
     directional_flick_glow_blur = 4
     directional_flick_edge_width = 2
     # ARGB: the low alpha keeps lane colors and notes visible through the field.

@@ -303,46 +303,79 @@ def _tap_tint_color(ctx: RenderContext, tap: Tap) -> int:
     return ctx.config.tap_color
 
 
+def _directional_flick_tail_factor(
+    distance_from_tip: float, tail_length: float, scale: float
+) -> float:
+    """Reciprocal falloff normalized to one at the tip and zero at the tail."""
+    if tail_length <= 0:
+        return 0.0
+    end_value = scale / (tail_length + scale)
+    value = scale / (distance_from_tip + scale)
+    return (value - end_value) / (1.0 - end_value)
+
+
 def _directional_flick_path(
     ctx: RenderContext, flick: DirectionalFlick, surface_height: int
-) -> tuple[Path, Path]:
-    """Return the filled body and highlighted leading edge of a flick."""
+) -> tuple[Path, Path, Path]:
+    """Return the filled body, leading edge and full-width baseline."""
     width = flick.width * ctx.config.track_width
     left = (flick.x - flick.width / 2) * ctx.config.track_width
     right = left + width
     base_y = surface_height - ctx.z_offset_for_time(flick.timestamp)
     height = ctx.config.directional_flick_height
+    tip_inset = min(ctx.config.directional_flick_tip_inset, width * 0.45)
 
-    # Direction 4 points right and direction 16 points left. Build the right
-    # shape first, then mirror its x coordinates for the left variant.
-    def x(value: float) -> float:
-        position = left + value * width
-        return left + right - position if flick.direction == 0x10 else position
+    # Distances are measured back from the direction-facing edge. The tip keeps
+    # a fixed inset, while the trailing edge follows a normalized hyperbola.
+    def x(distance_from_leading_edge: float) -> float:
+        distance = min(distance_from_leading_edge, width)
+        if flick.direction == 0x10:
+            return left + distance
+        return right - distance
 
-    tip_x = x(0.72)
+    tip_x = x(tip_inset)
     tip_y = base_y - height
+    tail_length = width - tip_inset
+    sample_count = max(2, int(tail_length / 8))
     body = Path()
-    body.moveTo(x(0.0), base_y)
+    body.moveTo(x(width), base_y)
+    for index in range(1, sample_count + 1):
+        progress = index / sample_count
+        distance_ratio = 1.0 - progress
+        distance = tip_inset + tail_length * distance_ratio
+        height_factor = _directional_flick_tail_factor(
+            tail_length * distance_ratio,
+            tail_length,
+            ctx.config.directional_flick_tail_scale,
+        )
+        body.lineTo(x(distance), base_y - height * height_factor)
     body.cubicTo(
-        x(0.22), base_y - height * 0.08,
-        x(0.58), base_y - height * 0.58,
-        tip_x, tip_y,
-    )
-    body.cubicTo(
-        x(0.80), base_y - height * 0.62,
-        x(0.93), base_y - height * 0.16,
-        x(1.0), base_y,
+        x(tip_inset * 0.65), base_y - height * 0.62,
+        x(tip_inset * 0.15), base_y - height * 0.16,
+        x(0.0), base_y,
     )
     body.close()
 
     leading_edge = Path()
     leading_edge.moveTo(tip_x, tip_y)
     leading_edge.cubicTo(
-        x(0.80), base_y - height * 0.62,
-        x(0.93), base_y - height * 0.16,
-        x(1.0), base_y,
+        x(tip_inset * 0.65), base_y - height * 0.62,
+        x(tip_inset * 0.15), base_y - height * 0.16,
+        x(0.0), base_y,
     )
-    return body, leading_edge
+    baseline = Path()
+    baseline.moveTo(left, base_y)
+    baseline.lineTo(right, base_y)
+    return body, leading_edge, baseline
+
+
+def _directional_flick_tip_x(ctx: RenderContext, flick: DirectionalFlick) -> float:
+    width = flick.width * ctx.config.track_width
+    left = (flick.x - flick.width / 2) * ctx.config.track_width
+    inset = min(ctx.config.directional_flick_tip_inset, width * 0.45)
+    if flick.direction == 0x10:
+        return left + inset
+    return left + width - inset
 
 
 def _directional_flick_color(ctx: RenderContext, flick: DirectionalFlick) -> int:
@@ -384,8 +417,12 @@ def render_directional_flicks(ctx: RenderContext, canvas: Canvas):
             paints[color] = (fill_paint, glow_paint, edge_paint)
 
         fill_paint, glow_paint, edge_paint = paints[color]
-        body, leading_edge = _directional_flick_path(ctx, flick, surface_height)
+        body, leading_edge, baseline = _directional_flick_path(
+            ctx, flick, surface_height
+        )
         canvas.drawPath(body, fill_paint)
+        canvas.drawPath(baseline, glow_paint)
+        canvas.drawPath(baseline, edge_paint)
         canvas.drawPath(leading_edge, glow_paint)
         canvas.drawPath(leading_edge, edge_paint)
 

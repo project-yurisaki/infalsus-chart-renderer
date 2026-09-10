@@ -7,10 +7,11 @@ from if_chart.parser import parse_chart
 from if_chart.renderer import render
 
 
-def main() -> None:
+def create_argument_parser() -> argparse.ArgumentParser:
     argument_parser = argparse.ArgumentParser(description="Render an In Falsus chart preview.")
     argument_parser.add_argument("chart", type=Path, help="Input .spc chart path")
     argument_parser.add_argument("output", type=Path, help="Output .jpg path")
+    argument_parser.add_argument("--font", type=Path, help="Custom font file")
     argument_parser.add_argument("--jacket", type=Path, help="Square jacket image")
     argument_parser.add_argument("--title", default="", help="Song title")
     argument_parser.add_argument("--artist", default="", help="Song artist")
@@ -21,7 +22,11 @@ def main() -> None:
         "--jacket-designer", default="", help="Jacket designer"
     )
     argument_parser.add_argument("--level", default="", help="Chart level")
-    args = argument_parser.parse_args()
+    return argument_parser
+
+
+def main() -> None:
+    args = create_argument_parser().parse_args()
 
     chart = parse_chart(args.chart.read_text(encoding="utf-8"))
     image = render(
@@ -32,6 +37,7 @@ def main() -> None:
         chart_designer=args.chart_designer,
         jacket_designer=args.jacket_designer,
         level=args.level,
+        font_path=str(args.font) if args.font else "",
     )
     with args.output.open("wb") as output:
         image.save(output, EncodedImageFormat.kJPEG, quality=90)

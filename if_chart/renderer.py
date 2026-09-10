@@ -883,8 +883,11 @@ def render(
     chart_designer: str = "",
     jacket_designer: str = "",
     level: str = "",
+    font_path: str = "",
 ) -> Image:
     ctx = RenderContext(chart)
+    if font_path:
+        ctx.config.font_path = font_path
     end_timestamp = ctx.get_max_object_time() + 500
     track_image = _render_track(ctx, end_timestamp)
     boundaries = _page_boundaries(ctx, end_timestamp)

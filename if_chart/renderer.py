@@ -13,14 +13,13 @@ from skia import (
     Canvas,
     ColorFilters,
     Font,
-    FontMgr,
-    FontStyle,
     Image,
     MaskFilter,
     Paint,
     Path,
     Rect,
     Surface,
+    Typeface,
 )
 
 
@@ -91,6 +90,13 @@ class RenderContext:
             last_timestamp = last_timestamp + interval
             res.append(last_timestamp)
         return list(map(int, res))
+
+
+def _load_typeface(config: Config) -> Typeface:
+    typeface = Typeface.MakeFromFile(config.font_path)
+    if typeface is None:
+        raise RuntimeError(f"Unable to load font: {config.font_path}")
+    return typeface
 
 
 def render_lanes(ctx: RenderContext, canvas: Canvas):
@@ -560,7 +566,7 @@ def _draw_footer(
         Paint(Color=config.footer_divider_color),
     )
 
-    typeface = FontMgr.RefDefault().matchFamilyStyle("Arial", FontStyle())
+    typeface = _load_typeface(config)
     title_font = Font(typeface, config.footer_title_font_size)
     label_font = Font(typeface, config.footer_label_font_size)
     value_font = Font(typeface, config.footer_value_font_size)
@@ -629,7 +635,7 @@ def _draw_footer(
         identity_x,
         title_baseline + 55,
         config.footer_identity_width,
-        230,
+        240,
         label_font,
         value_font,
         label_paint,
@@ -780,7 +786,7 @@ def _render_pages(
     canvas.clear(config.page_background_color)
     _draw_footer(ctx, canvas, metadata, footer_top, total_width)
 
-    typeface = FontMgr.RefDefault().matchFamilyStyle("Arial", FontStyle())
+    typeface = _load_typeface(config)
     font = Font(typeface, config.page_time_font_size)
     time_paint = Paint(Color=config.page_time_color, AntiAlias=True)
     combo_font = Font(typeface, config.page_combo_font_size)

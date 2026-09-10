@@ -1,5 +1,11 @@
+from pathlib import Path
+
+
+_ASSET_DIRECTORY = Path(__file__).resolve().parent / "assets"
+
+
 class Config:
-    font_path = ''
+    font_path = str(_ASSET_DIRECTORY / "ChironHeiHK-SB.otf")
     pixels_per_sec = int(450 * 0.8)
     track_width = int(600 * 0.8)
     page_target_height = int(4800 * 0.8)
@@ -38,8 +44,8 @@ class Config:
     footer_value_color = 0xFFD6DEE9
     footer_credit_color = 0xFFF2F5FA
     footer_jacket_placeholder_color = 0xFF1B2635
-    tap_image_path = './tap.png'
-    hold_image_path = './hold.png'
+    tap_image_path = str(_ASSET_DIRECTORY / "tap.png")
+    hold_image_path = str(_ASSET_DIRECTORY / "hold.png")
     tap_left_color = 0xFF8B66F0
     tap_right_color = 0xFFE05C88
     hold_color = 0xFF3C92C7

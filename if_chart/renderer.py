@@ -218,6 +218,8 @@ def render_skyareas(ctx: RenderContext, canvas: Canvas):
 
     for group in by_group.values():
         group.sort()
+        prev_left_points = None
+        prev_right_points = None
         for index, skyarea in enumerate(group):
             left_points, right_points = _skyarea_points(ctx, skyarea, surface_height)
             has_previous = (
@@ -244,12 +246,24 @@ def render_skyareas(ctx: RenderContext, canvas: Canvas):
             ]
             if not has_previous:
                 edge_paths.append(_path_from_points([left_points[0], right_points[0]]))
+            else:
+                # If widths are unequal, draw connecting lines between endpoints
+                if prev_left_points is not None and prev_right_points is not None:
+                    # Check if left endpoints don't match
+                    if abs(prev_left_points[-1][0] - left_points[0][0]) > 0.01:
+                        edge_paths.append(_path_from_points([prev_left_points[-1], left_points[0]]))
+                    # Check if right endpoints don't match
+                    if abs(prev_right_points[-1][0] - right_points[0][0]) > 0.01:
+                        edge_paths.append(_path_from_points([prev_right_points[-1], right_points[0]]))
             if not has_next:
                 edge_paths.append(_path_from_points([left_points[-1], right_points[-1]]))
 
             for edge_path in edge_paths:
                 canvas.drawPath(edge_path, glow_paint)
                 canvas.drawPath(edge_path, edge_paint)
+            
+            prev_left_points = left_points
+            prev_right_points = right_points
 
 
 def _get_tint_paint(cache: dict[int, Paint], color: int) -> Paint:

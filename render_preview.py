@@ -10,7 +10,7 @@ from if_chart.renderer import render
 def main() -> None:
     argument_parser = argparse.ArgumentParser(description="Render an In Falsus chart preview.")
     argument_parser.add_argument("chart", type=Path, help="Input .spc chart path")
-    argument_parser.add_argument("output", type=Path, help="Output .png path")
+    argument_parser.add_argument("output", type=Path, help="Output .jpg path")
     argument_parser.add_argument("--jacket", type=Path, help="Square jacket image")
     argument_parser.add_argument("--title", default="", help="Song title")
     argument_parser.add_argument("--artist", default="", help="Song artist")
@@ -34,7 +34,7 @@ def main() -> None:
         level=args.level,
     )
     with args.output.open("wb") as output:
-        image.save(output, EncodedImageFormat.kPNG)
+        image.save(output, EncodedImageFormat.kJPEG, quality=90)
 
 
 if __name__ == "__main__":

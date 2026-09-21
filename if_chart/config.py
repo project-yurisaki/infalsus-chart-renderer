@@ -47,8 +47,8 @@ class Config:
     footer_value_color = 0xFFD6DEE9
     footer_credit_color = 0xFFF2F5FA
     footer_jacket_placeholder_color = 0xFF1B2635
-    tap_image_path = str(_ASSET_DIRECTORY / "tap.png")
-    hold_image_path = str(_ASSET_DIRECTORY / "hold.png")
+    tap_image_path = str(_ASSET_DIRECTORY / "note.png")
+    hold_image_path = str(_ASSET_DIRECTORY / "note_hold.png")
     tap_left_color = 0xFF8B66F0
     tap_right_color = 0xFFE05C88
     hold_color = 0xFF3C92C7

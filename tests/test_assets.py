@@ -20,6 +20,9 @@ class BuiltinAssetTests(unittest.TestCase):
             self.assertEqual(path.parent.name, "assets")
             self.assertEqual(path.parent.parent.name, "if_chart")
 
+        self.assertEqual(Path(Config.tap_image_path).name, "note.png")
+        self.assertEqual(Path(Config.hold_image_path).name, "note_hold.png")
+
     def test_default_font_can_be_loaded(self):
         self.assertIsNotNone(_load_typeface(Config()))
 

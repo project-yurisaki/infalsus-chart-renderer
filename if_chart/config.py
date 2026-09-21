@@ -7,6 +7,9 @@ _ASSET_DIRECTORY = Path(__file__).resolve().parent / "assets"
 class Config:
     font_path = str(_ASSET_DIRECTORY / "ChironHeiHK-SB.otf")
     pixels_per_sec = int(450 * 0.8)
+    # Extreme chart-speed gimmicks can otherwise create tens of thousands of
+    # empty pixels in a single millisecond. This only affects preview spacing.
+    max_visual_track_speed = 4.0
     track_width = int(600 * 0.8)
     page_target_height = int(4800 * 0.8)
     page_time_column_width = 112

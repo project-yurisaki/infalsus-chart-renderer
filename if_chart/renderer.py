@@ -42,6 +42,13 @@ class RenderContext:
         self.speed_changes = sorted([x for x in self.raw_events if isinstance(x, TrackSpeedChange)])
         self.bpm_changes = sorted([x for x in self.raw_events if isinstance(x, BpmChange)])
         self.config = Config()
+
+    def _visual_track_speed(self, speed: float) -> float:
+        speed = abs(speed)
+        limit = self.config.max_visual_track_speed
+        if limit <= 0:
+            return speed
+        return min(speed, limit)
         
     def _raw_z_offset_for_time(self, timestamp: int) -> float:
         speed = 1.0
@@ -53,8 +60,7 @@ class RenderContext:
             if item.timestamp < timestamp:
                 new_timestamp = min(item.timestamp, timestamp)
                 z += (new_timestamp - last_timestamp) * speed
-                # Use absolute speed here
-                speed = abs(item.speed)
+                speed = self._visual_track_speed(item.speed)
                 last_timestamp = new_timestamp
             else:
                 break

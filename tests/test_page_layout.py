@@ -1,6 +1,6 @@
 import unittest
 
-from if_chart.elements import BpmChange, Chart, Tap
+from if_chart.elements import BpmChange, Chart, Tap, TrackSpeedChange
 from if_chart.renderer import (
     RenderContext,
     _beat_line_timestamps_with_bounds,
@@ -28,6 +28,21 @@ class PageLayoutTests(unittest.TestCase):
         context.config.page_target_height = 1000
 
         self.assertEqual(_page_boundaries(context, 6000), [0, 2000, 4000, 6000])
+
+    def test_extreme_track_speed_is_limited_for_preview_spacing(self):
+        chart = Chart(
+            [
+                TrackSpeedChange(1000, 99999),
+                TrackSpeedChange(1001, 1),
+                Tap(2000, lane=2, width=1),
+            ],
+            120,
+            4,
+        )
+        context = RenderContext(chart)
+
+        self.assertEqual(context._raw_z_offset_for_time(1001), 1004)
+        self.assertAlmostEqual(context.z_offset_for_time(2000), 721.08)
 
     def test_beat_lines_include_render_bounds(self):
         context = RenderContext(Chart([Tap(5500, lane=2, width=1)], 120, 4))

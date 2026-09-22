@@ -50,12 +50,12 @@ class RenderMetadata:
 class RenderContext:
     T = TypeVar('T')
 
-    def __init__(self, chart: Chart) -> None:
+    def __init__(self, chart: Chart, config: Config | None = None) -> None:
         self.chart = chart
         self.raw_events = chart.events
         self.speed_changes = sorted([x for x in self.raw_events if isinstance(x, TrackSpeedChange)])
         self.bpm_changes = sorted([x for x in self.raw_events if isinstance(x, BpmChange)])
-        self.config = Config()
+        self.config = config if config is not None else Config()
 
     def _visual_track_speed(self, speed: float) -> float:
         speed = abs(speed)
@@ -917,11 +917,9 @@ def render(
     chart_designer: str = "",
     jacket_designer: str = "",
     level: str = "",
-    font_path: str = "",
+    config: Config | None = None,
 ) -> Image:
-    ctx = RenderContext(chart)
-    if font_path:
-        ctx.config.font_path = font_path
+    ctx = RenderContext(chart, config)
     end_timestamp = ctx.get_max_object_time() + 500
     track_image = _render_track(ctx, end_timestamp)
     boundaries = _page_boundaries(ctx, end_timestamp)

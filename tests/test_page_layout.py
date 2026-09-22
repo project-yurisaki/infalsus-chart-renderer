@@ -14,6 +14,7 @@
 
 import unittest
 
+from if_chart.config import Config
 from if_chart.elements import BpmChange, Chart, Tap, TrackSpeedChange
 from if_chart.renderer import (
     RenderContext,
@@ -25,6 +26,15 @@ from if_chart.renderer import (
 
 
 class PageLayoutTests(unittest.TestCase):
+    def test_render_context_accepts_external_config(self):
+        config = Config()
+        config.pixels_per_sec = 123
+
+        context = RenderContext(Chart([Tap(1000, lane=2, width=1)], 120, 4), config)
+
+        self.assertIs(context.config, config)
+        self.assertEqual(context.config.pixels_per_sec, 123)
+
     def test_chart_time_format(self):
         self.assertEqual(_format_chart_time(0), "0:00.0")
         self.assertEqual(_format_chart_time(61540), "1:01.5")

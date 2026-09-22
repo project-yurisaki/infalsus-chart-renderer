@@ -82,11 +82,16 @@ from pathlib import Path
 
 from skia import EncodedImageFormat
 
+from if_chart.config import Config
 from if_chart.parser import parse_chart
 from if_chart.renderer import render
 
 
 chart = parse_chart(Path("chart.spc").read_text(encoding="utf-8"))
+config = Config()
+config.max_visual_track_speed = 4.0
+# config.font_path = "custom-font.ttf"
+
 image = render(
     chart,
     jacket_path="jacket.png",
@@ -95,15 +100,16 @@ image = render(
     chart_designer="Chart Designer",
     jacket_designer="Jacket Designer",
     level="12+",
+    config=config,
 )
 
 with Path("preview.jpg").open("wb") as output:
     image.save(output, EncodedImageFormat.kJPEG, quality=90)
 ```
 
-Pass `font_path` to `render()` to use a different font. Rendering dimensions,
-colors, the visual track-speed limit, and other options can be adjusted in the
-`Config` class in `if_chart/config.py`.
+Pass a `Config` instance to `render()` to customize rendering dimensions,
+colors, the visual track-speed limit, and other options. To use a custom
+font, set `config.font_path` before calling `render()`.
 
 ## Third-party assets
 

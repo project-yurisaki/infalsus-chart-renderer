@@ -17,6 +17,7 @@ from pathlib import Path
 
 from skia import EncodedImageFormat
 
+from if_chart.config import Config
 from if_chart.parser import parse_chart
 from if_chart.renderer import render
 
@@ -43,6 +44,9 @@ def main() -> None:
     args = create_argument_parser().parse_args()
 
     chart = parse_chart(args.chart.read_text(encoding="utf-8"))
+    config = Config()
+    if args.font:
+        config.font_path = str(args.font)
     image = render(
         chart,
         str(args.jacket) if args.jacket else "",
@@ -51,7 +55,7 @@ def main() -> None:
         chart_designer=args.chart_designer,
         jacket_designer=args.jacket_designer,
         level=args.level,
-        font_path=str(args.font) if args.font else "",
+        config=config,
     )
     with args.output.open("wb") as output:
         image.save(output, EncodedImageFormat.kJPEG, quality=90)

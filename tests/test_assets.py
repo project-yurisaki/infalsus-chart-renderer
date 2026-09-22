@@ -48,9 +48,11 @@ class BuiltinAssetTests(unittest.TestCase):
 
     def test_render_uses_custom_font(self):
         custom_font = Config.font_path
+        config = Config()
+        config.font_path = custom_font
         chart = Chart([Tap(1000, lane=2, width=1)], 120, 4)
         with patch.object(Config, "font_path", "missing-font.ttf"):
-            image = render(chart, "", "Title", "Artist", font_path=custom_font)
+            image = render(chart, "", "Title", "Artist", config=config)
         self.assertGreater(image.width(), 0)
         self.assertGreater(image.height(), 0)
 
